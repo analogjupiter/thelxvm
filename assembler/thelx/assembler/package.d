@@ -1,1 +1,1 @@
-module thx.assembler;
+module thelx.assembler;

@@ -1,1 +1,1 @@
-module thx.debugger;
+module thelx.debugger;

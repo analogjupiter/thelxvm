@@ -1,5 +1,5 @@
 {
-	"name": "thxvm",
+	"name": "thelxvm",
 	"description": "Thelxinoë Virtual Machine suite",
 
 	"copyright": "Copyright © 2025  Elias Batek",
@@ -24,32 +24,32 @@
 		},
 		{
 			"name": "assembler",
-			"description": "ThxVM assembler",
+			"description": "ThelxVM assembler",
 			"importPaths": ["assembler"],
 			"sourcePaths": ["assembler"],
 			"targetPath": "bin",
 			"dependencies": {
-				"thxvm:vm": "*"
+				"thelxvm:vm": "*"
 			}
 		},
 		{
 			"name": "debugger",
-			"description": "ThxVM debugger",
+			"description": "ThelxVM debugger",
 			"importPaths": ["debugger"],
 			"sourcePaths": ["debugger"],
 			"targetPath": "bin",
 			"dependencies": {
-				"thxvm:vm": "*"
+				"thelxvm:vm": "*"
 			}
 		},
 		{
 			"name": "emulator",
-			"description": "ThxVM executor",
+			"description": "ThelxVM ROM executor",
 			"importPaths": ["emulator"],
 			"sourcePaths": ["emulator"],
 			"targetPath": "bin",
 			"dependencies": {
-				"thxvm:vm": "*"
+				"thelxvm:vm": "*"
 			}
 		}
 	]

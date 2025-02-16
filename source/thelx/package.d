@@ -1,10 +1,10 @@
 /++
 	Thelxinoë Virtual Machine suite
  +/
-module thx;
+module thelx;
 
-public import thx.assembler;
-public import thx.debugger;
-public import thx.emulator;
-public import thx.vm;
+public import thelx.assembler;
+public import thelx.debugger;
+public import thelx.emulator;
+public import thelx.vm;
 

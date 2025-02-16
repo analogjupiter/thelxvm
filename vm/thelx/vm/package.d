@@ -1,1 +1,1 @@
-module thx.vm;
+module thelx.vm;

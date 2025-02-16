@@ -1,1 +1,1 @@
-module thx.emulator;
+module thelx.emulator;
