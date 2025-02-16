@@ -1,0 +1,56 @@
+{
+	"name": "thxvm",
+	"description": "Thelxinoë Virtual Machine suite",
+
+	"copyright": "Copyright © 2025  Elias Batek",
+	"license": "BSL-1.0",
+
+	"targetPath": "bin",
+
+	"dependencies": {
+		":vm": "*",
+		":assembler": "*",
+		":debugger": "*",
+		":emulator": "*"
+	},
+
+	"subPackages": [
+		{
+			"name": "vm",
+			"description": "Thelxinoë Virtual Machine",
+			"importPaths": ["vm"],
+			"sourcePaths": ["vm"],
+			"targetPath": "bin"
+		},
+		{
+			"name": "assembler",
+			"description": "ThxVM assembler",
+			"importPaths": ["assembler"],
+			"sourcePaths": ["assembler"],
+			"targetPath": "bin",
+			"dependencies": {
+				"thxvm:vm": "*"
+			}
+		},
+		{
+			"name": "debugger",
+			"description": "ThxVM debugger",
+			"importPaths": ["debugger"],
+			"sourcePaths": ["debugger"],
+			"targetPath": "bin",
+			"dependencies": {
+				"thxvm:vm": "*"
+			}
+		},
+		{
+			"name": "emulator",
+			"description": "ThxVM executor",
+			"importPaths": ["emulator"],
+			"sourcePaths": ["emulator"],
+			"targetPath": "bin",
+			"dependencies": {
+				"thxvm:vm": "*"
+			}
+		}
+	]
+}
