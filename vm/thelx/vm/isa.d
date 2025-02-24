@@ -44,6 +44,9 @@ enum OpCode : ubyte {
 	binaryShiftRight    = 0x49,
 	binaryUShiftRight   = 0x4A,
 
+	trap                = 0xE0,
+	emit                = 0xE1,
+
 	print               = 0xFD,
 
 	error               = 0xFE,
@@ -92,7 +95,10 @@ private template InstructionType(OpCode opCode) {
 	private enum string opName = instructionIdentifier!opCode;
 	private enum string inName = opName[0].toUpper ~ opName[1 .. $] ~ "Instruction";
 
-	alias InstructionType = __traits(getMember, thelx.vm.isa, inName);
+	static assert(__traits(hasMember, thelx.vm.isa, inName), "Missing struct `", inName, "`.");
+	static if (__traits(hasMember, thelx.vm.isa, inName)) {
+		alias InstructionType = __traits(getMember, thelx.vm.isa, inName);
+	}
 }
 
 @safe unittest {
@@ -125,17 +131,26 @@ alias instructionTable = staticMap!(InstructionType, OpCodesSeq!());
 	assert(is(instructionTable[OpCode.noOp] == NoOpInstruction));
 }
 
+alias HeapPointer = void*;
 alias Program = const(ubyte)[];
 alias ProgramCounter = size_t;
+alias SymbolTablePointer = size_t;
 alias StackOffset = ushort;
-alias HeapPointer = void*;
+
+struct HeapAddress {
+	HeapPointer pointer;
+}
+
+struct ProgramAddress {
+	ProgramCounter offset;
+}
 
 struct StackAddress {
 	StackOffset offset;
 }
 
-struct HeapAddress {
-	HeapPointer pointer;
+struct SymbolAddress {
+	SymbolTablePointer index;
 }
 
 struct BadInstruction {
@@ -151,13 +166,13 @@ struct NoOpInstruction {
 }
 
 struct LoadInstruction {
-	StackAddress sourcePointer;
 	StackAddress target;
+	StackAddress sourcePointer;
 }
 
 struct StoreInstruction {
-	StackAddress source;
 	StackAddress targetPointer;
+	StackAddress source;
 }
 
 struct PushInstruction {
@@ -168,66 +183,124 @@ struct PopInstruction {
 }
 
 struct JumpAlwaysInstruction {
+	ProgramAddress target;
 }
 
 struct JumpNonNegativeInstruction {
+	ProgramAddress target;
+	StackAddress subject;
 }
 
 struct JumpNonZeroInstruction {
+	ProgramAddress target;
+	StackAddress subject;
 }
 
 struct UnaryLogicalNotInstruction {
+	ProgramAddress result;
+	StackAddress subject;
 }
 
 struct UnaryNegativeInstruction {
+	ProgramAddress result;
+	StackAddress subject;
 }
 
 struct UnaryIncrementInstruction {
+	ProgramAddress result;
+	StackAddress subject;
 }
 
 struct UnaryDecrementInstruction {
+	ProgramAddress result;
+	StackAddress subject;
 }
 
 struct UnaryBitwiseNotInstruction {
+	ProgramAddress result;
+	StackAddress subject;
 }
 
 struct BinaryAndInstruction {
+	StackAddress result;
+	StackAddress operandA;
+	StackAddress operandB;
 }
 
 struct BinaryOrInstruction {
+	StackAddress result;
+	StackAddress operandA;
+	StackAddress operandB;
 }
 
 struct BinaryXorInstruction {
+	StackAddress result;
+	StackAddress operandA;
+	StackAddress operandB;
 }
 
 struct BinaryAddInstruction {
+	StackAddress sum;
+	StackAddress operandA;
+	StackAddress operandB;
 }
 
 struct BinarySubInstruction {
+	StackAddress difference;
+	StackAddress minuend;
+	StackAddress subtrahend;
 }
 
 struct BinaryMulInstruction {
+	StackAddress product;
+	StackAddress multiplicand;
+	StackAddress multiplier;
 }
 
 struct BinaryDivInstruction {
+	StackAddress quotient;
+	StackAddress dividend;
+	StackAddress divisor;
 }
 
 struct BinaryModInstruction {
+	StackAddress remainder;
+	StackAddress dividend;
+	StackAddress divisor;
 }
 
 struct BinaryShiftLeftInstruction {
+	StackAddress result;
+	StackAddress subject;
+	StackAddress shift;
 }
 
 struct BinaryShiftRightInstruction {
+	StackAddress result;
+	StackAddress subject;
+	StackAddress shift;
 }
 
 struct BinaryUShiftRightInstruction {
+	StackAddress result;
+	StackAddress subject;
+	StackAddress shift;
+}
+
+struct TrapInstruction {
+	SymbolAddress exceptionType;
+	ProgramAddress handler;
+}
+
+struct EmitInstruction {
+	StackAddress exceptionPointer;
 }
 
 struct PrintInstruction {
 }
 
 struct ErrorInstruction {
+	StackAddress messagePointer;
 }
 
 struct CrashInstruction {
@@ -238,6 +311,7 @@ alias InstructionTypes = AliasSeq!(
 	NoDuplicates!instructionTable,
 );
 
+///
 alias Instruction = SumType!(InstructionTypes);
 
 private OpCode fetchOpCode(ref Program program) {
@@ -256,9 +330,19 @@ private T fetchParameter(T)(ref Program program) @trusted {
 	return param;
 }
 
-private StackAddress fetchStackAddressParameter(ref Program program) {
+private ProgramAddress fetchTypedParameter(T : ProgramAddress)(ref Program program) {
+	const value = fetchParameter!(typeof(ProgramAddress.offset))(program);
+	return ProgramAddress(value);
+}
+
+private StackAddress fetchTypedParameter(T : StackAddress)(ref Program program) {
 	const value = fetchParameter!(typeof(StackAddress.offset))(program);
 	return StackAddress(value);
+}
+
+private SymbolAddress fetchTypedParameter(T : SymbolAddress)(ref Program program) {
+	const value = fetchParameter!(typeof(SymbolAddress.index))(program);
+	return SymbolAddress(value);
 }
 
 private auto decodeInstructionImpl(OpCode opCode)(ref Program program) {
@@ -268,12 +352,8 @@ private auto decodeInstructionImpl(OpCode opCode)(ref Program program) {
 
 	// dfmt off
 	static foreach (paramName; FieldNameTuple!InstrType) {{
-		alias param = __traits(getMember, InstrType, paramName);
-		alias paramType = typeof(param);
-
-		static if (is(paramType == StackAddress)) {
-			__traits(getMember, result, paramName) = fetchStackAddressParameter(program);
-		}
+		alias paramType = typeof(__traits(getMember, InstrType, paramName));
+		__traits(getMember, result, paramName) = fetchTypedParameter!paramType(program);
 	}}
 	// dfmt on
 
