@@ -297,6 +297,7 @@ struct EmitInstruction {
 }
 
 struct PrintInstruction {
+	StackAddress subjectPointer;
 }
 
 struct ErrorInstruction {

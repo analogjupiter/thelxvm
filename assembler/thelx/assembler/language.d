@@ -38,7 +38,7 @@ static immutable Instruction[OpCode.max + 1] instructionTable = () {
 	table[OpCode.unaryNegative]     = Instruction("numneg");
 	table[OpCode.unaryIncrement]    = Instruction("inc");
 	table[OpCode.unaryDecrement]    = Instruction("dec");
-	table[OpCode.unaryBitwiseNot]   = Instruction("bwnot");
+	table[OpCode.unaryBitwiseNot]   = Instruction("bwneg");
 
 	table[OpCode.binaryAnd]         = Instruction("and");
 	table[OpCode.binaryOr]          = Instruction("or");
@@ -54,7 +54,6 @@ static immutable Instruction[OpCode.max + 1] instructionTable = () {
 
 	table[OpCode.trap]              = Instruction("trap");
 	table[OpCode.emit]              = Instruction("emit");
-
 
 	table[OpCode.print]             = Instruction("print");
 
