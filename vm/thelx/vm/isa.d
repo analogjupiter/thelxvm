@@ -27,10 +27,10 @@ enum OpCode : ubyte {
 	jumpNonZero         = 0x12,
 
 	unaryLogicalNot     = 0x20,
-	unaryNegative       = 0x20,
-	unaryIncrement      = 0x21,
-	unaryDecrement      = 0x22,
-	unaryBitwiseNot     = 0x23,
+	unaryNegative       = 0x21,
+	unaryIncrement      = 0x22,
+	unaryDecrement      = 0x23,
+	unaryBitwiseNot     = 0x24,
 
 	binaryAnd           = 0x40,
 	binaryOr            = 0x41,
@@ -233,23 +233,12 @@ struct ErrorInstruction {
 struct CrashInstruction {
 }
 
-alias Instruction = SumType!(
+alias InstructionTypes = AliasSeq!(
 	BadInstruction,
-
-	InvalidInstruction,
-	NoOpInstruction,
-
-	LoadInstruction,
-	StoreInstruction,
-
-	PushInstruction,
-	PopInstruction,
-
-	PrintInstruction,
-
-	ErrorInstruction,
-	CrashInstruction,
+	NoDuplicates!instructionTable,
 );
+
+alias Instruction = SumType!(InstructionTypes);
 
 private OpCode fetchOpCode(ref Program program) {
 	const op = program[0].castTo!OpCode;
@@ -272,32 +261,38 @@ private StackAddress fetchStackAddressParameter(ref Program program) {
 	return StackAddress(value);
 }
 
+private auto decodeInstructionImpl(OpCode opCode)(ref Program program) {
+	alias InstrType = InstructionType!(opCode);
+
+	InstrType result;
+
+	// dfmt off
+	static foreach (paramName; FieldNameTuple!InstrType) {{
+		alias param = __traits(getMember, InstrType, paramName);
+		alias paramType = typeof(param);
+
+		static if (is(paramType == StackAddress)) {
+			__traits(getMember, result, paramName) = fetchStackAddressParameter(program);
+		}
+	}}
+	// dfmt on
+
+	return result;
+}
+
 private Instruction decodeInstructionImpl(ref Program program) {
 	const opCode = program.fetchOpCode();
 
 	switch (opCode) {
-	case OpCode.invalid: {
-			return Instruction(InvalidInstruction());
-		}
-	case OpCode.noOp: {
-			return Instruction(NoOpInstruction());
-		}
-
-	case OpCode.load: {
-			auto param0 = program.fetchStackAddressParameter();
-			return Instruction(LoadInstruction(param0));
-		}
-	case OpCode.store: {
-			auto param0 = program.fetchStackAddressParameter();
-			return Instruction(LoadInstruction(param0));
+		// dfmt off
+		static foreach (oc; EnumMembers!OpCode) {
+			case oc:
+				return Instruction(decodeInstructionImpl!oc(program));
 		}
 
-	case OpCode.error: {
-			return Instruction();
-		}
-
-	default:
-		goto case OpCode.invalid;
+		default:
+			goto case OpCode.invalid;
+		// dfmt on
 	}
 }
 
