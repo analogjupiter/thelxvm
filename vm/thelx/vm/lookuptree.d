@@ -47,6 +47,8 @@ private struct LookupTreeLeaf(Key, Value) {
 	}
 }
 
+private enum splitIdxOf(size_t length) = ((length >> 1) + (length % 2));
+
 private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 
 	private {
@@ -62,13 +64,20 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 
 		Leaf[capacityLeaves] _leaves;
 		size_t _length = 0;
+		bool _hasBranches = false;
 
 		Node*[capacityBranches] _branches;
 	}
 
 @safe pure nothrow:
 
-	this(Node* parent, Leaf[] leaves) {
+	this(Node* parent, Leaf leaf) @nogc {
+		_parent = parent;
+		_leaves[0] = leaf;
+		_length = 1;
+	}
+
+	this(Node* parent, scope Leaf[] leaves) @nogc {
 		_parent = parent;
 		_leaves[0 .. leaves.length] = leaves[];
 		_length = leaves.length;
@@ -83,7 +92,15 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 	}
 
 	bool hasBranches() const @nogc {
-		return (_branches.length > 0);
+		return _hasBranches;
+	}
+
+	size_t leavesCount() const @nogc {
+		return _length;
+	}
+
+	size_t branchesCount() const @nogc {
+		return (_hasBranches) ? _length + 1 : 0;
 	}
 
 	Leaf[] leaves() @nogc {
@@ -91,7 +108,19 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 	}
 
 	Node*[] branches() @nogc {
-		return _branches[0 .. _length + 1];
+		return _branches[0 .. branchesCount];
+	}
+
+	Node* findBranch(Key key) {
+		assert(_hasBranches);
+
+		foreach (idx, leaf; leaves) {
+			if (key < leaf.key) {
+				return _branches[idx];
+			}
+		}
+
+		return _branches[branchesCount - 1];
 	}
 
 	void spliceInsert(size_t offset, Leaf add) @nogc {
@@ -106,6 +135,12 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 	void endInsert(Leaf add) @nogc {
 		_leaves[_length] = add;
 		++_length;
+	}
+
+	void endInsert(Leaf add, Node* greater) @nogc {
+		_leaves[_length] = add;
+		++_length;
+		_branches[_length] = greater;
 	}
 
 	bool selfInsert(Leaf add) @nogc {
@@ -126,23 +161,97 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 		return true;
 	}
 
+	bool push(Leaf anchor, Node* toSplit) {
+		if (isFull) {
+			// TODO
+			assert(false);
+		}
+
+		assert(false); // TODO
+	}
+
+	void becomeParent(Leaf anchor) {
+		assert(isFull);
+
+		enum idxSplit = splitIdxOf!capacityLeaves;
+
+		// `this` is GC-allocated.
+		Node* lss = new Node((() @trusted => &this)(), _leaves[0 .. idxSplit]);
+		Node* grt = new Node((() @trusted => &this)(), _leaves[idxSplit .. $]);
+
+		_leaves[0] = anchor;
+		_length = 1;
+
+		_branches[0] = lss;
+		_branches[1] = grt;
+	}
+
+	void pushToParent(Leaf anchor) {
+		if (_parent is null) {
+			becomeParent(anchor);
+			return;
+		}
+
+		_parent.push(anchor, &this);
+	}
+
+	bool shuffle(Leaf add, out Leaf anchor) @nogc {
+		Leaf[capacityLeaves + 1] buffer;
+		// TODO: branches?
+
+		size_t copyOffset = 0;
+		foreach (idx, leaf; leaves) {
+			if ((copyOffset == 0) && (add < leaf)) {
+				copyOffset = 1;
+				buffer[idx] = add;
+			}
+
+			if (add.hasIdenticalKeyTo(leaf)) {
+				return false;
+			}
+
+			buffer[idx + copyOffset] = leaf;
+		}
+
+		enum idxAnchor = (buffer.length >> 1) + 1 - (buffer.length % 2);
+		enum idxSplit = splitIdxOf!capacityLeaves;
+
+		anchor = buffer[idxAnchor];
+		_leaves[0 .. idxSplit] = buffer[0 .. idxAnchor];
+		_leaves[idxSplit .. $] = buffer[idxAnchor + 1 .. $];
+
+		return true;
+	}
+
+	bool splitInsert(Leaf add) {
+		assert(leaves.length == capacityLeaves);
+
+		Leaf anchor;
+		const shuffled = this.shuffle(add, anchor);
+		if (!shuffled) {
+			return false;
+		}
+
+		this.pushToParent(anchor);
+		return true;
+	}
+
 	bool insert(Leaf add) {
 		if (_length == 0) {
 			assert(this.isRoot);
-			return this.selfInsert(add);
+			this.endInsert(add);
+			return true;
 		}
 
-		if (this.isFull) {
-			if (!this.hasBranches) {
+		if (!hasBranches) {
+			if (!isFull) {
+				return this.selfInsert(add);
 			}
+
+			return this.splitInsert(add);
 		}
 
-		if (_length < capacityLeaves) {
-			return this.selfInsert(add);
-		}
-
-		// TODO
-		assert(false, "not implemented");
+		return this.findBranch(add.key).insert(add);
 	}
 }
 
