@@ -401,15 +401,15 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 			return true;
 		}
 
-		if (!hasBranches) {
-			if (!isFull) {
-				return this.selfInsert(add);
-			}
+		if (hasBranches) {
+			return this.findBranch(add.key).insert(add);
+		}
 
+		if (isFull) {
 			return this.splitInsert(add);
 		}
 
-		return this.findBranch(add.key).insert(add);
+		return this.selfInsert(add);
 	}
 }
 
