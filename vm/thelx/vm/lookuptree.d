@@ -83,6 +83,27 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 		_length = leaves.length;
 	}
 
+	this(Node* parent, scope Leaf[] leaves, scope Node*[] branches) @nogc {
+		this(parent, leaves);
+
+		_branches[0 .. branches.length] = branches[];
+		_hasBranches = true;
+
+		assert(branches.length == branchesCount);
+	}
+
+	this(Node* parent, scope Leaf[] leaves, Node* firstBranch, scope Node*[] furtherBranches) @nogc {
+		this(parent, leaves);
+
+		assert((1 + furtherBranches.length) <= _branches.length);
+
+		_branches[0] = firstBranch;
+		_branches[1 .. 1 + furtherBranches.length] = furtherBranches[];
+		_hasBranches = true;
+
+		assert((1 + furtherBranches.length) == branchesCount);
+	}
+
 	private Node* getPointer() @trusted pure nothrow {
 		import core.memory : GC;
 
@@ -218,35 +239,66 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 
 	Node* splitCopyLower(Node* parent) {
 		enum idxSplit = splitIdxOf!capacityLeaves;
-		return new Node(parent, _leaves[0 .. idxSplit]);
+		enum idxSplitBranches = idxSplit + 1;
+		// dfmt off
+		return (hasBranches)
+			? new Node(parent, _leaves[0 .. idxSplit], _branches[0 .. idxSplitBranches])
+			: new Node(parent, _leaves[0 .. idxSplit]);
+		// dfmt on
 	}
 
 	Node* splitCopyUpper(Node* parent) {
+		assert(!hasBranches);
+
 		enum idxSplit = splitIdxOf!capacityLeaves;
 		return new Node(parent, _leaves[idxSplit .. $]);
 	}
 
+	Node* splitCopyUpper(Node* parent, Node* lessThanUpper) {
+		assert(hasBranches);
+
+		enum idxSplit = splitIdxOf!capacityLeaves;
+		enum idxSplitBranches = idxSplit + 1;
+		return new Node(
+			parent,
+			_leaves[idxSplit .. $],
+			lessThanUpper,
+			_branches[idxSplitBranches .. $],
+		);
+	}
+
 	void push(Leaf anchor, Node* toSplit) {
 		if (isFull) {
-			// TODO
-			assert(false);
+			Leaf parentAnchor;
+			const shuffled = this.shuffle(anchor, parentAnchor);
+			assert(shuffled);
+
+			Node* lessThanUpper;
+			this.shuffle(toSplit, lessThanUpper);
+
+			this.pushToParent(parentAnchor, lessThanUpper);
+			return;
 		}
 
 		this.selfInsertSplit(anchor, toSplit);
 	}
 
-	void promoteToParent(Leaf anchor) {
+	void promoteToParent(Leaf anchor, Node* lessThanUpper = null) {
 		assert(isFull);
 
-		Node* lss = this.splitCopyLower(this.getPointer());
-		Node* grt = this.splitCopyUpper(this.getPointer());
+		// dfmt off
+		Node* less = this.splitCopyLower(this.getPointer());
+		Node* greater = (lessThanUpper is null)
+			? this.splitCopyUpper(this.getPointer())
+			: this.splitCopyUpper(this.getPointer(), lessThanUpper);
+		// dfmt on
 
 		_leaves[0] = anchor;
 		_leaves[1 .. $] = null;
 		_length = 1;
 
-		_branches[0] = lss;
-		_branches[1] = grt;
+		_branches[0] = less;
+		_branches[1] = greater;
 		_branches[2 .. $] = null;
 		_hasBranches = true;
 	}
@@ -260,9 +312,20 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 		_parent.push(anchor, this.getPointer());
 	}
 
+	void pushToParent(Leaf anchor, Node* lessThanUpper) {
+		if (_parent is null) {
+			promoteToParent(anchor, lessThanUpper);
+			return;
+		}
+
+		// TODO
+		assert(false);
+		//_parent.push(anchor, this.getPointer());
+	}
+
 	bool shuffle(Leaf add, out Leaf anchor) @nogc {
+		assert(isFull);
 		Leaf[capacityLeaves + 1] buffer;
-		// TODO: branches?
 
 		size_t copyOffset = 0;
 		foreach (idx, leaf; leaves) {
@@ -291,6 +354,31 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 		_leaves[idxSplit .. $] = buffer[idxAnchor + 1 .. $];
 
 		return true;
+	}
+
+	void shuffle(Node* toSplit, out Node* lessThanUpper) {
+		assert(isFull);
+		Node*[capacityBranches + 1] buffer;
+
+		size_t copyOffset = 0;
+		foreach (idx, branch; branches) {
+			if (branch is toSplit) {
+				copyOffset = 1;
+				buffer[idx] = branch.splitDropLower(_parent);
+			}
+
+			buffer[idx + copyOffset] = branch;
+		}
+
+		assert(copyOffset == 1);
+
+		enum idxLessThanUpper = (buffer.length >> 1) + (buffer.length % 2);
+		enum idxSplit = splitIdxOf!capacityLeaves;
+		enum idxSplitBranches = idxSplit + 1;
+
+		lessThanUpper = buffer[idxLessThanUpper];
+		_branches[0 .. idxSplitBranches] = buffer[0 .. idxLessThanUpper];
+		_branches[idxSplitBranches .. $] = buffer[idxLessThanUpper + 1 .. $];
 	}
 
 	bool splitInsert(Leaf add) {
@@ -626,6 +714,52 @@ struct LookupTree(Key, Value, size_t capacityLeaves = 4) {
 		Leaf(31),
 	]);
 	assert(tree._root.branches[4].leaves == [
+		Leaf(40),
+		Leaf(41),
+	]);
+
+	assert(tree.insert(12, null));
+	assert(tree.insert(14, null));
+	assert(tree._root.branches[0].leaves == [
+		Leaf(10),
+		Leaf(11),
+		Leaf(12),
+		Leaf(14),
+	]);
+
+	assert(tree.insert(13, null));
+	assert(tree._root.leaves == [
+		Leaf(25),
+	]);
+	assert(tree._root.branches[0].leaves == [
+		Leaf(12),
+		Leaf(20),
+	]);
+	assert(tree._root.branches[1].leaves == [
+		Leaf(29),
+		Leaf(32),
+	]);
+	assert(tree._root.branches[0].branches[0].leaves == [
+		Leaf(10),
+		Leaf(11),
+	]);
+	assert(tree._root.branches[0].branches[1].leaves == [
+		Leaf(13),
+		Leaf(14),
+	]);
+	assert(tree._root.branches[0].branches[2].leaves == [
+		Leaf(21),
+		Leaf(22),
+	]);
+	assert(tree._root.branches[1].branches[0].leaves == [
+		Leaf(26),
+		Leaf(28),
+	]);
+	assert(tree._root.branches[1].branches[1].leaves == [
+		Leaf(30),
+		Leaf(31),
+	]);
+	assert(tree._root.branches[1].branches[2].leaves == [
 		Leaf(40),
 		Leaf(41),
 	]);
