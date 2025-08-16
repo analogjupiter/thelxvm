@@ -83,6 +83,17 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 		_length = leaves.length;
 	}
 
+	private Node* getPointer() @trusted pure nothrow {
+		import core.memory : GC;
+
+		auto ptr = &this;
+		if (GC.addrOf(ptr) is null) {
+			assert(false);
+		}
+
+		return ptr;
+	}
+
 	bool isRoot() const @nogc {
 		return (_parent is null);
 	}
@@ -132,6 +143,15 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 		++_length;
 	}
 
+	void spliceInsert(size_t offset, Node* add) @nogc {
+		const count = branchesCount - 1;
+		foreach_reverse (idx, branch; _branches[offset .. count]) {
+			_branches[offset + idx + 1] = branch;
+		}
+
+		_branches[offset] = add;
+	}
+
 	void endInsert(Leaf add) @nogc {
 		_leaves[_length] = add;
 		++_length;
@@ -161,38 +181,83 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 		return true;
 	}
 
-	bool push(Leaf anchor, Node* toSplit) {
+	void selfInsertSplit(Leaf add, Node* toSplit) {
+		assert(!this.isFull);
+
+		size_t idxInsertLeaf = leavesCount;
+		foreach (idx, leaf; leaves) {
+			if (add < leaf) {
+				idxInsertLeaf = idx;
+				break;
+			}
+		}
+		this.spliceInsert(idxInsertLeaf, add);
+
+		foreach (idx, branch; branches) {
+			if (branch is toSplit) {
+				assert(idx == idxInsertLeaf);
+
+				auto less = toSplit.splitDropLower(this.getPointer());
+				this.spliceInsert(idx, less);
+				return;
+			}
+		}
+
+		assert(false, "Cannot split unrelated branch.");
+	}
+
+	Node* splitDropLower(Node* parent) {
+		enum idxSplit = splitIdxOf!capacityLeaves;
+		auto lower = new Node(parent, _leaves[0 .. idxSplit]);
+		auto upper = _leaves[idxSplit .. $];
+		_leaves[0 .. upper.length] = upper;
+		_leaves[upper.length .. $] = null;
+		_length = upper.length;
+		return lower;
+	}
+
+	Node* splitCopyLower(Node* parent) {
+		enum idxSplit = splitIdxOf!capacityLeaves;
+		return new Node(parent, _leaves[0 .. idxSplit]);
+	}
+
+	Node* splitCopyUpper(Node* parent) {
+		enum idxSplit = splitIdxOf!capacityLeaves;
+		return new Node(parent, _leaves[idxSplit .. $]);
+	}
+
+	void push(Leaf anchor, Node* toSplit) {
 		if (isFull) {
 			// TODO
 			assert(false);
 		}
 
-		assert(false); // TODO
+		this.selfInsertSplit(anchor, toSplit);
 	}
 
-	void becomeParent(Leaf anchor) {
+	void promoteToParent(Leaf anchor) {
 		assert(isFull);
 
-		enum idxSplit = splitIdxOf!capacityLeaves;
-
-		// `this` is GC-allocated.
-		Node* lss = new Node((() @trusted => &this)(), _leaves[0 .. idxSplit]);
-		Node* grt = new Node((() @trusted => &this)(), _leaves[idxSplit .. $]);
+		Node* lss = this.splitCopyLower(this.getPointer());
+		Node* grt = this.splitCopyUpper(this.getPointer());
 
 		_leaves[0] = anchor;
+		_leaves[1 .. $] = null;
 		_length = 1;
 
 		_branches[0] = lss;
 		_branches[1] = grt;
+		_branches[2 .. $] = null;
+		_hasBranches = true;
 	}
 
 	void pushToParent(Leaf anchor) {
 		if (_parent is null) {
-			becomeParent(anchor);
+			promoteToParent(anchor);
 			return;
 		}
 
-		_parent.push(anchor, &this);
+		_parent.push(anchor, this.getPointer());
 	}
 
 	bool shuffle(Leaf add, out Leaf anchor) @nogc {
@@ -211,6 +276,11 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 			}
 
 			buffer[idx + copyOffset] = leaf;
+		}
+
+		if (copyOffset == 0) {
+			enum idxFinal = -1 + buffer.length;
+			buffer[idxFinal] = add;
 		}
 
 		enum idxAnchor = (buffer.length >> 1) + 1 - (buffer.length % 2);
@@ -273,14 +343,14 @@ struct LookupTree(Key, Value, size_t capacityLeaves = 4) {
 @safe pure nothrow:
 
 	///
-	void insert(Key key, Value value) {
+	bool insert(Key key, Value value) {
 		auto leaf = Leaf(key, value);
 
 		if (_root is null) {
 			_root = new Node(null, null);
 		}
 
-		_root.insert(leaf);
+		return _root.insert(leaf);
 	}
 }
 
@@ -414,5 +484,149 @@ struct LookupTree(Key, Value, size_t capacityLeaves = 4) {
 	assert(tree._root.leaves == [
 		Leaf(1),
 		Leaf(4),
+	]);
+}
+
+@safe pure nothrow unittest {
+	alias Tree = LookupTree!(int, typeof(null), 4);
+	alias Leaf = Tree.Leaf;
+
+	auto tree = Tree();
+	assert(tree.insert(20, null));
+	assert(tree.insert(40, null));
+	assert(tree.insert(30, null));
+	assert(tree.insert(10, null));
+	assert(tree._root.leaves == [
+		Leaf(10),
+		Leaf(20),
+		Leaf(30),
+		Leaf(40),
+	]);
+
+	assert(tree.insert(25, null));
+	assert(tree._root.leaves == [
+		Leaf(25),
+	]);
+	assert(tree._root.branches[0].leaves == [
+		Leaf(10),
+		Leaf(20),
+	]);
+	assert(tree._root.branches[1].leaves == [
+		Leaf(30),
+		Leaf(40),
+	]);
+
+	assert(tree.insert(21, null));
+	assert(tree.insert(22, null));
+	assert(tree._root.leaves == [
+		Leaf(25),
+	]);
+	assert(tree._root.branches[0].leaves == [
+		Leaf(10),
+		Leaf(20),
+		Leaf(21),
+		Leaf(22),
+	]);
+	assert(tree._root.branches[1].leaves == [
+		Leaf(30),
+		Leaf(40),
+	]);
+
+	assert(tree.insert(26, null));
+	assert(tree.insert(32, null));
+	assert(tree._root.leaves == [
+		Leaf(25),
+	]);
+	assert(tree._root.branches[0].leaves == [
+		Leaf(10),
+		Leaf(20),
+		Leaf(21),
+		Leaf(22),
+	]);
+	assert(tree._root.branches[1].leaves == [
+		Leaf(26),
+		Leaf(30),
+		Leaf(32),
+		Leaf(40),
+	]);
+
+	assert(tree.insert(11, null));
+	assert(tree._root.leaves == [
+		Leaf(20),
+		Leaf(25),
+	]);
+	assert(tree._root.branches[0].leaves == [
+		Leaf(10),
+		Leaf(11),
+	]);
+	assert(tree._root.branches[1].leaves == [
+		Leaf(21),
+		Leaf(22),
+	]);
+	assert(tree._root.branches[2].leaves == [
+		Leaf(26),
+		Leaf(30),
+		Leaf(32),
+		Leaf(40),
+	]);
+
+	assert(tree.insert(41, null));
+	assert(tree._root.leaves == [
+		Leaf(20),
+		Leaf(25),
+		Leaf(32),
+	]);
+	assert(tree._root.branches[0].leaves == [
+		Leaf(10),
+		Leaf(11),
+	]);
+	assert(tree._root.branches[1].leaves == [
+		Leaf(21),
+		Leaf(22),
+	]);
+	assert(tree._root.branches[2].leaves == [
+		Leaf(26),
+		Leaf(30),
+	]);
+	assert(tree._root.branches[3].leaves == [
+		Leaf(40),
+		Leaf(41),
+	]);
+
+	assert(tree.insert(31, null));
+	assert(tree.insert(28, null));
+	assert(tree._root.branches[2].leaves == [
+		Leaf(26),
+		Leaf(28),
+		Leaf(30),
+		Leaf(31),
+	]);
+
+	assert(tree.insert(29, null));
+	assert(tree._root.leaves == [
+		Leaf(20),
+		Leaf(25),
+		Leaf(29),
+		Leaf(32),
+	]);
+	assert(tree._root.branches[0].leaves == [
+		Leaf(10),
+		Leaf(11),
+	]);
+	assert(tree._root.branches[1].leaves == [
+		Leaf(21),
+		Leaf(22),
+	]);
+	assert(tree._root.branches[2].leaves == [
+		Leaf(26),
+		Leaf(28),
+	]);
+	assert(tree._root.branches[3].leaves == [
+		Leaf(30),
+		Leaf(31),
+	]);
+	assert(tree._root.branches[4].leaves == [
+		Leaf(40),
+		Leaf(41),
 	]);
 }
