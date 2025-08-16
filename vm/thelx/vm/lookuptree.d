@@ -89,6 +89,10 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 		_branches[0 .. branches.length] = branches[];
 		_hasBranches = true;
 
+		foreach (branch; branches) {
+			branch._parent = this.getPointer();
+		}
+
 		assert(branches.length == branchesCount);
 	}
 
@@ -100,6 +104,10 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 		_branches[0] = firstBranch;
 		_branches[1 .. 1 + furtherBranches.length] = furtherBranches[];
 		_hasBranches = true;
+
+		foreach (branch; branches) {
+			branch._parent = this.getPointer();
+		}
 
 		assert((1 + furtherBranches.length) == branchesCount);
 	}
@@ -228,6 +236,8 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 	}
 
 	Node* splitDropLower(Node* parent) {
+		assert(parent !is null);
+
 		enum idxSplit = splitIdxOf!capacityLeaves;
 		auto lower = new Node(parent, _leaves[0 .. idxSplit]);
 		auto upper = _leaves[idxSplit .. $];
@@ -364,7 +374,7 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 		foreach (idx, branch; branches) {
 			if (branch is toSplit) {
 				copyOffset = 1;
-				buffer[idx] = branch.splitDropLower(_parent);
+				buffer[idx] = branch.splitDropLower(this.getPointer());
 			}
 
 			buffer[idx + copyOffset] = branch;
@@ -411,6 +421,21 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 
 		return this.selfInsert(add);
 	}
+
+	version (unittest) void verifyParentPointers() {
+		const self = this.getPointer();
+		foreach (branch; branches) {
+			if (branch._parent !is self) {
+				if (branch._parent is null) {
+					assert(false, "Parent is null.");
+				}
+
+				assert(false, "Parent is incorrect.");
+			}
+
+			branch.verifyParentPointers();
+		}
+	}
 }
 
 ///
@@ -438,7 +463,13 @@ struct LookupTree(Key, Value, size_t capacityLeaves = 4) {
 			_root = new Node(null, null);
 		}
 
-		return _root.insert(leaf);
+		const status = _root.insert(leaf);
+
+		version (unittest) {
+			_root.verifyParentPointers();
+		}
+
+		return status;
 	}
 }
 
@@ -760,6 +791,30 @@ struct LookupTree(Key, Value, size_t capacityLeaves = 4) {
 		Leaf(31),
 	]);
 	assert(tree._root.branches[1].branches[2].leaves == [
+		Leaf(40),
+		Leaf(41),
+	]);
+
+	assert(tree.insert(38, null));
+	assert(tree.insert(39, null));
+	assert(tree._root.branches[1].branches[2].leaves == [
+		Leaf(38),
+		Leaf(39),
+		Leaf(40),
+		Leaf(41),
+	]);
+
+	assert(tree.insert(37, null));
+	assert(tree._root.branches[1].leaves == [
+		Leaf(29),
+		Leaf(32),
+		Leaf(39),
+	]);
+	assert(tree._root.branches[1].branches[2].leaves == [
+		Leaf(37),
+		Leaf(38),
+	]);
+	assert(tree._root.branches[1].branches[3].leaves == [
 		Leaf(40),
 		Leaf(41),
 	]);
