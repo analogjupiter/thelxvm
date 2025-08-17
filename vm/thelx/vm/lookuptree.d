@@ -210,7 +210,7 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 		return true;
 	}
 
-	void selfInsertSplit(Leaf add, Node* toSplit) {
+	void selfInsertSplit(Leaf add, Node* toSplit, Node* lessThanUpper = null) {
 		assert(!this.isFull);
 
 		size_t idxInsertLeaf = leavesCount;
@@ -226,7 +226,11 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 			if (branch is toSplit) {
 				assert(idx == idxInsertLeaf);
 
-				auto less = toSplit.splitDropLower(this.getPointer());
+				// dfmt off
+				auto less = (lessThanUpper is null)
+					? toSplit.splitDropLower(this.getPointer())
+					: toSplit.splitDropLower(this.getPointer(), lessThanUpper);
+				// dfmt on
 				this.spliceInsert(idx, less);
 				return;
 			}
@@ -237,6 +241,7 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 
 	Node* splitDropLower(Node* parent) {
 		assert(parent !is null);
+		assert(!hasBranches);
 
 		enum idxSplit = splitIdxOf!capacityLeaves;
 		auto lower = new Node(parent, _leaves[0 .. idxSplit]);
@@ -244,6 +249,29 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 		_leaves[0 .. upper.length] = upper;
 		_leaves[upper.length .. $] = null;
 		_length = upper.length;
+		return lower;
+	}
+
+	Node* splitDropLower(Node* parent, Node* lessThanUpper) {
+		assert(parent !is null);
+		assert(lessThanUpper !is null);
+		assert(hasBranches);
+
+		enum idxSplit = splitIdxOf!capacityLeaves;
+		enum idxSplitBranches = idxSplit + 1;
+
+		auto lowerBranches = _branches[0 .. idxSplitBranches];
+		auto upperBranches = _branches[idxSplitBranches .. $];
+
+		auto lower = new Node(parent, _leaves[0 .. idxSplit], lowerBranches);
+		auto upper = _leaves[idxSplit .. $];
+		_leaves[0 .. upper.length] = upper;
+		_leaves[upper.length .. $] = null;
+		_length = upper.length;
+
+		_branches[0] = lessThanUpper;
+		_branches[1 .. 1 + upperBranches.length] = upperBranches;
+
 		return lower;
 	}
 
@@ -293,6 +321,11 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 		this.selfInsertSplit(anchor, toSplit);
 	}
 
+	void push(Leaf anchor, Node* toSplit, Node* lessThanUpper) {
+		assert(!isFull);
+		this.selfInsertSplit(anchor, toSplit, lessThanUpper);
+	}
+
 	void promoteToParent(Leaf anchor, Node* lessThanUpper = null) {
 		assert(isFull);
 
@@ -328,9 +361,7 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 			return;
 		}
 
-		// TODO
-		assert(false);
-		//_parent.push(anchor, this.getPointer());
+		_parent.push(anchor, this.getPointer(), lessThanUpper);
 	}
 
 	bool shuffle(Leaf add, out Leaf anchor) @nogc {
@@ -817,5 +848,81 @@ struct LookupTree(Key, Value, size_t capacityLeaves = 4) {
 	assert(tree._root.branches[1].branches[3].leaves == [
 		Leaf(40),
 		Leaf(41),
+	]);
+
+	assert(tree.insert(36, null));
+	assert(tree.insert(34, null));
+	assert(tree._root.branches[1].branches[2].leaves == [
+		Leaf(34),
+		Leaf(36),
+		Leaf(37),
+		Leaf(38),
+	]);
+
+	assert(tree.insert(35, null));
+	assert(tree._root.branches[1].leaves == [
+		Leaf(29),
+		Leaf(32),
+		Leaf(36),
+		Leaf(39),
+	]);
+	assert(tree._root.branches[1].branches[2].leaves == [
+		Leaf(34),
+		Leaf(35),
+	]);
+	assert(tree._root.branches[1].branches[3].leaves == [
+		Leaf(37),
+		Leaf(38),
+	]);
+	assert(tree._root.branches[1].branches[4].leaves == [
+		Leaf(40),
+		Leaf(41),
+	]);
+
+	assert(tree.insert(42, null));
+	assert(tree.insert(43, null));
+	assert(tree._root.branches[1].branches[4].leaves == [
+		Leaf(40),
+		Leaf(41),
+		Leaf(42),
+		Leaf(43),
+	]);
+
+	assert(tree.insert(44, null));
+	assert(tree._root.leaves == [
+		Leaf(25),
+		Leaf(36),
+	]);
+	assert(tree._root.branches[1].leaves == [
+		Leaf(29),
+		Leaf(32),
+	]);
+	assert(tree._root.branches[2].leaves == [
+		Leaf(39),
+		Leaf(42),
+	]);
+	assert(tree._root.branches[1].branches[0].leaves == [
+		Leaf(26),
+		Leaf(28),
+	]);
+	assert(tree._root.branches[1].branches[1].leaves == [
+		Leaf(30),
+		Leaf(31),
+	]);
+	assert(tree._root.branches[1].branches[2].leaves == [
+		Leaf(34),
+		Leaf(35),
+	]);
+	assert(tree._root.branches[2].branches[0].leaves == [
+		Leaf(37),
+		Leaf(38),
+	]);
+	assert(tree._root.branches[2].branches[1].leaves == [
+		Leaf(40),
+		Leaf(41),
+	]);
+	assert(tree._root.branches[2].branches[2].leaves == [
+		Leaf(43),
+		Leaf(44),
 	]);
 }
