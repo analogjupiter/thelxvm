@@ -322,7 +322,18 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 	}
 
 	void push(Leaf anchor, Node* toSplit, Node* lessThanUpper) {
-		assert(!isFull);
+		if (isFull) {
+			Leaf parentAnchor;
+			const shuffled = this.shuffle(anchor, parentAnchor);
+			assert(shuffled);
+
+			Node* lessThanUpper2;
+			this.shuffle(toSplit, lessThanUpper, lessThanUpper2);
+
+			this.pushToParent(parentAnchor, lessThanUpper2);
+			return;
+		}
+
 		this.selfInsertSplit(anchor, toSplit, lessThanUpper);
 	}
 
@@ -420,6 +431,31 @@ private struct LookupTreeNode(Key, Value, size_t capacityLeaves) {
 		lessThanUpper = buffer[idxLessThanUpper];
 		_branches[0 .. idxSplitBranches] = buffer[0 .. idxLessThanUpper];
 		_branches[idxSplitBranches .. $] = buffer[idxLessThanUpper + 1 .. $];
+	}
+
+	void shuffle(Node* toSplit, Node* lessThanUpper, out Node* lessThanUpper2) {
+		assert(isFull);
+		Node*[capacityBranches + 1] buffer;
+
+		size_t copyOffset = 0;
+		foreach (idx, branch; branches) {
+			if (branch is toSplit) {
+				copyOffset = 1;
+				buffer[idx] = branch.splitDropLower(this.getPointer(), lessThanUpper);
+			}
+
+			buffer[idx + copyOffset] = branch;
+		}
+
+		assert(copyOffset == 1);
+
+		enum idxLessThanUpper2 = (buffer.length >> 1) + (buffer.length % 2);
+		enum idxSplit = splitIdxOf!capacityLeaves;
+		enum idxSplitBranches = idxSplit + 1;
+
+		lessThanUpper2 = buffer[idxLessThanUpper2];
+		_branches[0 .. idxSplitBranches] = buffer[0 .. idxLessThanUpper2];
+		_branches[idxSplitBranches .. $] = buffer[idxLessThanUpper2 + 1 .. $];
 	}
 
 	bool splitInsert(Leaf add) {
@@ -924,5 +960,306 @@ struct LookupTree(Key, Value, size_t capacityLeaves = 4) {
 	assert(tree._root.branches[2].branches[2].leaves == [
 		Leaf(43),
 		Leaf(44),
+	]);
+
+	assert(tree.insert(1, null));
+	assert(tree.insert(2, null));
+	assert(tree.insert(8, null));
+	assert(tree._root.branches[0].leaves == [
+		Leaf(8),
+		Leaf(12),
+		Leaf(20),
+	]);
+	assert(tree._root.branches[0].branches[0].leaves == [
+		Leaf(1),
+		Leaf(2),
+	]);
+	assert(tree._root.branches[0].branches[1].leaves == [
+		Leaf(10),
+		Leaf(11),
+	]);
+	assert(tree._root.branches[0].branches[2].leaves == [
+		Leaf(13),
+		Leaf(14),
+	]);
+	assert(tree._root.branches[0].branches[3].leaves == [
+		Leaf(21),
+		Leaf(22),
+	]);
+
+	assert(tree.insert(7, null));
+	assert(tree.insert(4, null));
+	assert(tree.insert(5, null));
+	assert(tree._root.branches[0].leaves == [
+		Leaf(4),
+		Leaf(8),
+		Leaf(12),
+		Leaf(20),
+	]);
+	assert(tree._root.branches[0].branches[0].leaves == [
+		Leaf(1),
+		Leaf(2),
+	]);
+	assert(tree._root.branches[0].branches[1].leaves == [
+		Leaf(5),
+		Leaf(7),
+	]);
+	assert(tree._root.branches[0].branches[2].leaves == [
+		Leaf(10),
+		Leaf(11),
+	]);
+	assert(tree._root.branches[0].branches[3].leaves == [
+		Leaf(13),
+		Leaf(14),
+	]);
+	assert(tree._root.branches[0].branches[4].leaves == [
+		Leaf(21),
+		Leaf(22),
+	]);
+
+	assert(tree.insert(3, null));
+	assert(tree.insert(9, null));
+	assert(tree.insert(6, null));
+	assert(tree.insert(0, null));
+	assert(tree._root.branches[0].leaves == [
+		Leaf(4),
+		Leaf(8),
+		Leaf(12),
+		Leaf(20),
+	]);
+	assert(tree._root.branches[0].branches[0].leaves == [
+		Leaf(0),
+		Leaf(1),
+		Leaf(2),
+		Leaf(3),
+	]);
+	assert(tree._root.branches[0].branches[1].leaves == [
+		Leaf(5),
+		Leaf(6),
+		Leaf(7),
+	]);
+	assert(tree._root.branches[0].branches[2].leaves == [
+		Leaf(9),
+		Leaf(10),
+		Leaf(11),
+	]);
+	assert(tree._root.branches[0].branches[3].leaves == [
+		Leaf(13),
+		Leaf(14),
+	]);
+	assert(tree._root.branches[0].branches[4].leaves == [
+		Leaf(21),
+		Leaf(22),
+	]);
+
+	assert(tree.insert(-1, null));
+	assert(tree._root.leaves == [
+		Leaf(8),
+		Leaf(25),
+		Leaf(36),
+	]);
+	assert(tree._root.branches[0].leaves == [
+		Leaf(1),
+		Leaf(4),
+	]);
+	assert(tree._root.branches[1].leaves == [
+		Leaf(12),
+		Leaf(20),
+	]);
+	assert(tree._root.branches[2].leaves == [
+		Leaf(29),
+		Leaf(32),
+	]);
+	assert(tree._root.branches[3].leaves == [
+		Leaf(39),
+		Leaf(42),
+	]);
+	assert(tree._root.branches[0].branches[0].leaves == [
+		Leaf(-1),
+		Leaf(0),
+	]);
+	assert(tree._root.branches[0].branches[1].leaves == [
+		Leaf(2),
+		Leaf(3),
+	]);
+	assert(tree._root.branches[0].branches[2].leaves == [
+		Leaf(5),
+		Leaf(6),
+		Leaf(7),
+	]);
+
+	assert(tree.insert(-30, null));
+	assert(tree.insert(-20, null));
+	assert(tree.insert(-40, null));
+	assert(tree._root.branches[0].leaves == [
+		Leaf(-20),
+		Leaf(1),
+		Leaf(4),
+	]);
+	assert(tree._root.branches[0].branches[0].leaves == [
+		Leaf(-40),
+		Leaf(-30),
+	]);
+	assert(tree._root.branches[0].branches[1].leaves == [
+		Leaf(-1),
+		Leaf(0),
+	]);
+	assert(tree._root.branches[0].branches[2].leaves == [
+		Leaf(2),
+		Leaf(3),
+	]);
+	assert(tree._root.branches[0].branches[3].leaves == [
+		Leaf(5),
+		Leaf(6),
+		Leaf(7),
+	]);
+
+	assert(tree.insert(-21, null));
+	assert(tree.insert(-29, null));
+	assert(tree.insert(-25, null));
+	assert(tree._root.branches[0].leaves == [
+		Leaf(-29),
+		Leaf(-20),
+		Leaf(1),
+		Leaf(4),
+	]);
+	assert(tree._root.branches[0].branches[0].leaves == [
+		Leaf(-40),
+		Leaf(-30),
+	]);
+	assert(tree._root.branches[0].branches[1].leaves == [
+		Leaf(-25),
+		Leaf(-21),
+	]);
+	assert(tree._root.branches[0].branches[2].leaves == [
+		Leaf(-1),
+		Leaf(0),
+	]);
+	assert(tree._root.branches[0].branches[3].leaves == [
+		Leaf(2),
+		Leaf(3),
+	]);
+	assert(tree._root.branches[0].branches[4].leaves == [
+		Leaf(5),
+		Leaf(6),
+		Leaf(7),
+	]);
+
+	assert(tree.insert(-50, null));
+	assert(tree.insert(-70, null));
+	assert(tree.insert(-23, null));
+	assert(tree.insert(-24, null));
+	assert(tree.insert(-22, null));
+	assert(tree._root.leaves == [
+		Leaf(-20),
+		Leaf(8),
+		Leaf(25),
+		Leaf(36),
+	]);
+	assert(tree._root.branches[0].leaves == [
+		Leaf(-29),
+		Leaf(-23),
+	]);
+	assert(tree._root.branches[1].leaves == [
+		Leaf(1),
+		Leaf(4),
+	]);
+	assert(tree._root.branches[0].branches[0].leaves == [
+		Leaf(-70),
+		Leaf(-50),
+		Leaf(-40),
+		Leaf(-30),
+	]);
+	assert(tree._root.branches[0].branches[1].leaves == [
+		Leaf(-25),
+		Leaf(-24),
+	]);
+	assert(tree._root.branches[0].branches[2].leaves == [
+		Leaf(-22),
+		Leaf(-21),
+	]);
+	assert(tree._root.branches[1].branches[0].leaves == [
+		Leaf(-1),
+		Leaf(0),
+	]);
+
+	assert(tree.insert(-75, null));
+	assert(tree._root.branches[0].leaves == [
+		Leaf(-50),
+		Leaf(-29),
+		Leaf(-23),
+	]);
+	assert(tree._root.branches[0].branches[0].leaves == [
+		Leaf(-75),
+		Leaf(-70),
+	]);
+	assert(tree._root.branches[0].branches[1].leaves == [
+		Leaf(-40),
+		Leaf(-30),
+	]);
+	assert(tree._root.branches[0].branches[2].leaves == [
+		Leaf(-25),
+		Leaf(-24),
+	]);
+
+	assert(tree.insert(-74, null));
+	assert(tree.insert(-71, null));
+	assert(tree.insert(-79, null));
+	assert(tree._root.branches[0].leaves == [
+		Leaf(-74),
+		Leaf(-50),
+		Leaf(-29),
+		Leaf(-23),
+	]);
+	assert(tree._root.branches[0].branches[0].leaves == [
+		Leaf(-79),
+		Leaf(-75),
+	]);
+	assert(tree._root.branches[0].branches[1].leaves == [
+		Leaf(-71),
+		Leaf(-70),
+	]);
+	assert(tree._root.branches[0].branches[2].leaves == [
+		Leaf(-40),
+		Leaf(-30),
+	]);
+	assert(tree._root.branches[0].branches[3].leaves == [
+		Leaf(-25),
+		Leaf(-24),
+	]);
+
+	assert(tree.insert(-32, null));
+	assert(tree.insert(-36, null));
+	assert(tree.insert(-41, null));
+	assert(tree._root.leaves == [
+		Leaf(8),
+	]);
+	assert(tree._root.branches[0].leaves == [
+		Leaf(-36),
+		Leaf(-20),
+	]);
+	assert(tree._root.branches[1].leaves == [
+		Leaf(25),
+		Leaf(36),
+	]);
+	assert(tree._root.branches[0].branches[0].leaves == [
+		Leaf(-74),
+		Leaf(-50),
+	]);
+	assert(tree._root.branches[0].branches[1].leaves == [
+		Leaf(-29),
+		Leaf(-23),
+	]);
+	assert(tree._root.branches[0].branches[2].leaves == [
+		Leaf(1),
+		Leaf(4),
+	]);
+	assert(tree._root.branches[1].branches[0].leaves == [
+		Leaf(12),
+		Leaf(20),
+	]);
+	assert(tree._root.branches[1].branches[1].leaves == [
+		Leaf(29),
+		Leaf(32),
 	]);
 }
